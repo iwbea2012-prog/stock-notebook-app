@@ -1,0 +1,9 @@
+{
+  "name": "銘柄ノート",
+  "short_name": "銘柄ノート",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f4f5fb",
+  "theme_color": "#4338ca",
+  "icons": []
+}

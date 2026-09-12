@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>銘柄ノート</title>
+<meta name="theme-color" content="#4338ca">
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a href="#/" class="brand">📒 銘柄ノート</a>
+  <nav>
+    <a href="#/add" class="btn-add">＋ 銘柄を追加</a>
+    <a href="#/settings" class="icon-link" title="設定" aria-label="設定">⚙️</a>
+  </nav>
+</header>
+
+<main id="app"></main>
+
+<footer class="foot-note">
+  データは端末のブラウザ内だけに保存されます（他の端末とは同期しません）。株価は取得時点のスナップショットで、実際の取引価格とはずれることがあります。
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
