@@ -125,6 +125,15 @@ async function fetchQuote(ticker) {
   };
 }
 
+async function searchSymbols(query) {
+  const base = getProxyBase();
+  if (!base) throw new Error("NO_PROXY");
+  const res = await fetch(`${base}/search?q=${encodeURIComponent(query)}`);
+  if (!res.ok) throw new Error("HTTP_" + res.status);
+  const data = await res.json();
+  return Array.isArray(data.results) ? data.results : [];
+}
+
 async function fetchFiveYearChart(ticker) {
   const base = getProxyBase();
   if (!base) throw new Error("NO_PROXY");
@@ -222,6 +231,16 @@ function renderAdd() {
     <a class="back-link" href="#/">← 一覧に戻る</a>
     <div class="card">
       <h2>銘柄を追加</h2>
+      ${getProxyBase() ? `
+        <label for="f-search">銘柄コード or 企業名で検索</label>
+        <input type="text" id="f-search" placeholder="例: 7203 / Toyota（日本語社名は精度が低めです）" autocomplete="off">
+        <div id="f-search-status" class="small-muted" style="margin-top:4px;"></div>
+        <ul id="f-search-results" class="history-list" style="max-height:260px;"></ul>
+      ` : `
+        <p class="small-muted">
+          検索機能を使うには、先に「設定」から中継サーバーのURLを登録してください。今はコードと銘柄名を直接入力してください。
+        </p>
+      `}
       <label for="f-code">証券コード（4桁の数字）</label>
       <input type="text" id="f-code" inputmode="numeric" placeholder="例: 7203">
       <label for="f-name">銘柄名</label>
@@ -231,9 +250,59 @@ function renderAdd() {
     </div>
   `;
 
+  wireAddForm();
+}
+
+function wireAddForm() {
+  const codeEl = document.getElementById("f-code");
+  const nameEl = document.getElementById("f-name");
+  const searchEl = document.getElementById("f-search");
+
+  if (searchEl) {
+    const statusEl = document.getElementById("f-search-status");
+    const resultsEl = document.getElementById("f-search-results");
+    let debounceTimer = null;
+
+    searchEl.addEventListener("input", () => {
+      clearTimeout(debounceTimer);
+      const q = searchEl.value.trim();
+      resultsEl.innerHTML = "";
+      if (q.length < 2) {
+        statusEl.textContent = "";
+        return;
+      }
+      statusEl.textContent = "検索中...";
+      debounceTimer = setTimeout(async () => {
+        try {
+          const results = await searchSymbols(q);
+          statusEl.textContent = results.length ? "候補をタップすると下欄に自動入力されます。" : "候補が見つかりませんでした。コード or 英語名で試すか、下に直接入力してください。";
+          resultsEl.innerHTML = results.map((r) => {
+            const code = r.symbol.replace(/\.[A-Za-z]+$/, "");
+            return `
+              <li style="cursor:pointer;" data-code="${escapeHtml(code)}" data-ticker="${escapeHtml(r.symbol)}" data-name="${escapeHtml(r.name)}" class="search-hit">
+                <strong>${escapeHtml(r.name)}</strong>
+                <span class="small-muted">（${escapeHtml(r.symbol)} ・ ${escapeHtml(r.exchange)}）</span>
+              </li>
+            `;
+          }).join("");
+          resultsEl.querySelectorAll(".search-hit").forEach((li) => {
+            li.addEventListener("click", () => {
+              codeEl.value = li.dataset.code;
+              nameEl.value = li.dataset.name;
+              statusEl.textContent = `「${li.dataset.name}」を入力欄にセットしました。内容を確認して追加してください。`;
+              resultsEl.innerHTML = "";
+            });
+          });
+        } catch (e) {
+          statusEl.textContent = "検索に失敗しました（" + e.message + "）。下に直接入力してください。";
+        }
+      }, 400);
+    });
+  }
+
   document.getElementById("f-submit").addEventListener("click", () => {
-    const code = normalizeCode(document.getElementById("f-code").value);
-    const name = document.getElementById("f-name").value.trim();
+    const code = normalizeCode(codeEl.value);
+    const name = nameEl.value.trim();
     const errorEl = document.getElementById("f-error");
     if (!code || !name) {
       errorEl.textContent = "証券コードと銘柄名の両方を入力してください。";
@@ -254,7 +323,7 @@ function renderAdd() {
       viewLog: [now],
       benefit: {
         hasBenefit: false,
-        minShares: null,
+        minShares: 100, // 2018年の単元株制度統一以降、東証銘柄はほぼ100株単位（例外あり・要確認）
         recordMonth: "",
         detail: "",
         checkedAt: null,
@@ -315,7 +384,8 @@ function renderStock(id) {
 
   const benefit = stock.benefit || {};
   const yahooLink = `https://finance.yahoo.co.jp/quote/${encodeURIComponent(stock.ticker)}`;
-  const searchLink = `https://www.google.com/search?q=${encodeURIComponent(stock.companyName + " 株主優待")}`;
+  const minkabuLink = `https://minkabu.jp/stock/${encodeURIComponent(stock.id)}/yutai`;
+  const searchLink = `https://www.google.com/search?q=${encodeURIComponent(`${stock.companyName} ${stock.id} 株主優待 権利確定月`)}`;
 
   $app.innerHTML = `
     <a class="back-link" href="#/">← 一覧に戻る</a>
@@ -354,6 +424,7 @@ function renderStock(id) {
       </div>
       <label for="b-shares">優待に必要な株数</label>
       <input type="number" id="b-shares" min="0" step="1" value="${benefit.minShares ?? ""}">
+      <div class="small-muted" style="margin-top:2px;">2018年の制度統一以降、東証銘柄は基本100株単位です（デフォルト値。優待により200株以上必要な場合もあるので下のリンクで確認してください）。</div>
       <label for="b-month">権利確定月</label>
       <input type="text" id="b-month" placeholder="例: 3月, 9月" value="${escapeHtml(benefit.recordMonth || "")}">
       <label for="b-detail">優待内容・条件（自由記述）</label>
@@ -361,8 +432,9 @@ function renderStock(id) {
       <label for="b-link">優待情報の参照リンク（任意）</label>
       <input type="url" id="b-link" placeholder="https://..." value="${escapeHtml(benefit.externalLink || "")}">
       <div class="link-row">
-        <a href="${yahooLink}" target="_blank" rel="noopener">Yahoo!ファイナンスで見る</a>
-        <a href="${searchLink}" target="_blank" rel="noopener">Googleで優待を調べる</a>
+        <a href="${minkabuLink}" target="_blank" rel="noopener">みんかぶで優待を見る</a>
+        <a href="${yahooLink}" target="_blank" rel="noopener">Yahoo!ファイナンス</a>
+        <a href="${searchLink}" target="_blank" rel="noopener">Googleで調べる</a>
         ${benefit.externalLink ? `<a href="${escapeHtml(benefit.externalLink)}" target="_blank" rel="noopener">保存したリンクを開く</a>` : ""}
       </div>
       ${benefit.checkedAt ? `<div class="small-muted" style="margin-top:8px;">最終確認日: ${escapeHtml(benefit.checkedAt)}</div>` : ""}
